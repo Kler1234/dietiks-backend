@@ -93,16 +93,34 @@ app.post('/product', async (req, res) => {
   }
 });
 
+
 app.get('/recipes', async (req, res) => {
   try {
-    const recipes = await fetchRecipes();
-    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    const client = await pool.connect();
+    let query = 'SELECT * FROM recipes WHERE 1=1'; // Базовый SQL-запрос
+
+    // Проверяем, есть ли параметры фильтрации в запросе
+    const { kkal, meal_type, diet } = req.query;
+    console.log(kkal, meal_type, diet);
+
+    // Добавляем условия фильтрации в SQL-запрос, если они указаны
+    if (kkal) query += ` AND kkal <= ${kkal}`;
+    if (meal_type) query += ` AND meal_type = '${meal_type}'`;
+    if (diet) {
+      const dietsArray = Array.isArray(diet) ? diet : [diet];
+      query += ` AND diet IN (${dietsArray.map(d => `'${d}'`).join(',')})`;
+  }
+
+    const result = await client.query(query);
+    const recipes = result.rows;
+    client.release();
     res.json(recipes);
   } catch (error) {
     console.error('Error fetching recipes:', error);
     res.status(500).send('Failed to fetch recipes');
   }
 });
+
 
 
 
