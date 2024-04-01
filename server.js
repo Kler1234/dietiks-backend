@@ -97,24 +97,23 @@ app.post('/product', async (req, res) => {
 app.get('/recipes', async (req, res) => {
   try {
     const client = await pool.connect();
-    let query = 'SELECT * FROM recipes WHERE 1=1'; // Базовый SQL-запрос
+    let query = 'SELECT * FROM recipes WHERE 1=1'; // Base SQL query
 
-    // Проверяем, есть ли параметры фильтрации в запросе
     const { kkal, meal_type, diet } = req.query;
-    console.log(kkal, meal_type, diet);
 
-    // Добавляем условия фильтрации в SQL-запрос, если они указаны
     if (kkal) query += ` AND kkal <= ${kkal}`;
     if (meal_type) query += ` AND meal_type = '${meal_type}'`;
     if (diet) {
       const dietsArray = Array.isArray(diet) ? diet : [diet];
       query += ` AND diet IN (${dietsArray.map(d => `'${d}'`).join(',')})`;
-  }
+    }
 
     const result = await client.query(query);
     const recipes = result.rows;
+
     client.release();
-    res.json(recipes);
+
+    res.json({ recipes });
   } catch (error) {
     console.error('Error fetching recipes:', error);
     res.status(500).send('Failed to fetch recipes');
@@ -122,6 +121,92 @@ app.get('/recipes', async (req, res) => {
 });
 
 
+app.post('/favorites/toggle', async (req, res) => {
+  const { token, favoriteData } = req.body;
+  console.log(token, favoriteData);
+  try {
+    if (!token) {
+      return res.status(400).send('Токен отсутствует');
+    }
+    const decoded = jwt.verify(token, 'NA-3aFhPebH?9U_RqwLskGzCB');  
+    const userQuery = await pool.query('SELECT user_id FROM users WHERE email = $1', [decoded.email]);
+    
+    if (userQuery.rows.length === 0) {
+      return res.status(404).send('Пользователь не найден');
+    }
+    
+    // Извлекаем userID из результата запроса
+    const userId = userQuery.rows[0].user_id;
+    console.log(userId);
+
+    // Получаем данные о рецепте и его статусе избранного
+    const { recipeId, isFavorite } = favoriteData;
+    console.log(recipeId, isFavorite);
+
+    // Выполняем запрос к базе данных для добавления или удаления рецепта из избранного
+    if (isFavorite) {
+      await pool.query('INSERT INTO favorites (user_id, recipe_id) VALUES ($1, $2)', [userId, recipeId]);
+    } else {
+      await pool.query('DELETE FROM favorites WHERE user_id = $1 AND recipe_id = $2', [userId, recipeId]);
+    }
+
+    // Отправляем успешный статус
+    res.sendStatus(200);
+  } catch (error) {
+    console.error('Ошибка при добавлении/удалении рецепта из избранного:', error);
+    res.sendStatus(500);
+  }
+});
+
+app.post('/favorites/status', async (req, res) => {
+  const { token, recipeId } = req.body;
+
+  try {
+    if (!token) {
+      return res.status(400).send('Токен отсутствует');
+    }
+    const decoded = jwt.verify(token, 'NA-3aFhPebH?9U_RqwLskGzCB');  
+    const userQuery = await pool.query('SELECT user_id FROM users WHERE email = $1', [decoded.email]);
+    const userId = userQuery.rows[0].user_id;
+
+    const query = 'SELECT COUNT(*) AS count FROM favorites WHERE user_id = $1 AND recipe_id = $2';
+    const result = await pool.query(query, [userId, recipeId]);
+    const isFavorite = result.rows[0].count > 0;
+
+    res.json({ isFavorite });
+  } catch (error) {
+    console.error('Ошибка проверки статуса избранного рецепта:', error);
+    res.status(500).send('Внутренняя ошибка сервера');
+  }
+});
+
+app.get('/favorites/recipes', async (req, res) => {
+  const token = req.headers.authorization.split(' ')[1];
+
+  try {
+    const decoded = jwt.verify(token, 'NA-3aFhPebH?9U_RqwLskGzCB');
+    const user = await pool.query('SELECT * FROM users WHERE email = $1', [decoded.email]);
+    if (user.rows.length === 0) {
+      return res.status(404).send('Пользователь не найден');
+    }
+    
+    const userId = user.rows[0].user_id;
+    
+    const query = `
+      SELECT recipes.* 
+      FROM recipes 
+      INNER JOIN favorites ON recipes.recipe_id = favorites.recipe_id 
+      WHERE favorites.user_id = $1;
+    `;
+    const result = await pool.query(query, [userId]);
+    const favoriteRecipes = result.rows;
+
+    res.status(200).json(favoriteRecipes);
+  } catch (error) {
+    console.error('Ошибка при получении избранных рецептов:', error);
+    res.status(500).send('Внутренняя ошибка сервера');
+  }
+});
 
 
 app.post('/recipes/moderation', async (req, res) => {
