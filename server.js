@@ -121,6 +121,75 @@ app.get('/recipes', async (req, res) => {
 });
 
 
+app.post('/diary/add', async (req, res) => {
+  try {
+    const { token, recipeId, name, mealType, recipeKkal, recipeProtein, recipeFats, recipeCarbohydrates } = req.body;
+    console.log(req.body);
+
+    if (!token) {
+      return res.status(400).send('Токен отсутствует');
+    }
+    const decoded = jwt.verify(token, 'NA-3aFhPebH?9U_RqwLskGzCB');  
+    const userQuery = await pool.query('SELECT user_id FROM users WHERE email = $1', [decoded.email]);
+    
+    if (userQuery.rows.length === 0) {
+      return res.status(404).send('Пользователь не найден');
+    }
+    
+    // Извлекаем userID из результата запроса
+    const userId = userQuery.rows[0].user_id;
+    console.log(userId);
+
+    // Добавление записи в дневник
+    const addDiaryEntryQuery = {
+      text: 'INSERT INTO diary (date, user_id, recipe_id, name, meal_type, kkal, protein, fats, carbohydrates) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+      values: [new Date(), userId, recipeId, name, mealType, recipeKkal, recipeProtein, recipeFats, recipeCarbohydrates],
+    };
+    await pool.query(addDiaryEntryQuery);
+
+    res.status(200).send('Запись успешно добавлена в дневник.');
+  } catch (error) {
+    console.error('Ошибка:', error.message);
+    res.status(500).send('Произошла ошибка при добавлении записи в дневник.');
+  }
+});
+
+app.get('/user/recipes', async (req, res) => {
+  const token = req.header('Authorization').replace('Bearer ', '');
+
+  if (!token) {
+    return res.status(400).send('Токен отсутствует');
+  }
+
+  try {
+    const decoded = jwt.verify(token, 'NA-3aFhPebH?9U_RqwLskGzCB');
+
+    const userQuery = await pool.query('SELECT user_id FROM users WHERE email = $1', [decoded.email]);
+
+    if (userQuery.rows.length === 0) {
+      return res.status(404).send('Пользователь не найден');
+    }
+
+    // Извлекаем userID из результата запроса
+    const userId = userQuery.rows[0].user_id;
+    console.log(userId);
+
+    // Получаем рецепты пользователя на сегодня
+    const currentDate = new Date().toLocaleDateString();
+    const userRecipes = await pool.query(`
+      SELECT * FROM diary
+      WHERE user_id = $1 AND date = $2
+    `, [userId, currentDate]);
+
+    res.json(userRecipes.rows);
+
+    console.log(userRecipes.rows);
+  } catch (error) {
+    console.error('Ошибка при получении рецептов пользователя:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
 app.post('/favorites/toggle', async (req, res) => {
   const { token, favoriteData } = req.body;
   console.log(token, favoriteData);
