@@ -43,9 +43,10 @@ app.post('/login', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM users WHERE email = $1 AND password = $2', [email, password]);
     if (result.rows.length > 0) {
-      const user = { email, password };
+      const user = result.rows[0];
       const token = jwt.sign(user, 'NA-3aFhPebH?9U_RqwLskGzCB');
-      res.status(200).json({ token });
+      res.status(200).json({ token, isAdmin: user.is_admin }); // Возвращаем также информацию о статусе администратора
+      console.log(user.is_admin);
     } else {
       res.status(401).send('Неверная почта или пароль');
     }
@@ -120,6 +121,28 @@ app.get('/recipes', async (req, res) => {
   }
 });
 
+app.delete('/admin/delete', async (req, res) => {
+  try {
+    const { recipeID } = req.body;
+
+    const deleteFavorites = {
+      text: 'DELETE FROM favorites WHERE recipe_id = $1',
+      values: [recipeID],
+    };
+    await pool.query(deleteFavorites);
+
+    const deleteRecipeAdmin = {
+      text: 'DELETE FROM recipes WHERE recipe_id = $1',
+      values: [recipeID],
+    };
+    await pool.query(deleteRecipeAdmin);
+
+    res.status(200).send('Рецепт успешно был удалён.');
+  } catch (error) {
+    console.error('Ошибка:', error.message);
+    res.status(500).send('Произошла ошибка при удалении рецепта.');
+  }
+});
 
 app.post('/diary/add', async (req, res) => {
   try {
@@ -154,6 +177,40 @@ app.post('/diary/add', async (req, res) => {
   }
 });
 
+app.delete('/diary/delete', async (req, res) => {
+  try {
+    const { token, entryID } = req.body;
+
+    if (!token) {
+      return res.status(400).send('Токен отсутствует');
+    }
+
+    const decoded = jwt.verify(token, 'NA-3aFhPebH?9U_RqwLskGzCB');  
+    const userQuery = await pool.query('SELECT user_id FROM users WHERE email = $1', [decoded.email]);
+
+    if (userQuery.rows.length === 0) {
+      return res.status(404).send('Пользователь не найден');
+    }
+
+    const userId = userQuery.rows[0].user_id;
+
+    // Удаляем запись из дневника по recipeId и userId
+    const deleteDiaryEntryQuery = {
+      text: 'DELETE FROM diary WHERE entry_id = $1 AND user_id = $2',
+      values: [entryID, userId],
+    };
+    await pool.query(deleteDiaryEntryQuery);
+
+    res.status(200).send('Запись успешно удалена из дневника.');
+  } catch (error) {
+    console.error('Ошибка:', error.message);
+    res.status(500).send('Произошла ошибка при удалении записи из дневника.');
+  }
+});
+
+
+
+
 app.get('/user/recipes', async (req, res) => {
   const token = req.header('Authorization').replace('Bearer ', '');
 
@@ -172,7 +229,6 @@ app.get('/user/recipes', async (req, res) => {
 
     // Извлекаем userID из результата запроса
     const userId = userQuery.rows[0].user_id;
-    console.log(userId);
 
     // Получаем рецепты пользователя на сегодня
     const currentDate = new Date().toLocaleDateString();
@@ -183,7 +239,6 @@ app.get('/user/recipes', async (req, res) => {
 
     res.json(userRecipes.rows);
 
-    console.log(userRecipes.rows);
   } catch (error) {
     console.error('Ошибка при получении рецептов пользователя:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
