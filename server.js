@@ -3,7 +3,10 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
+const fs = require('fs');
+const path = require('path');
 const app = express();
+
 const PORT = process.env.PORT || 3000;
 
 // Подключение к базе данных PostgreSQL
@@ -98,7 +101,7 @@ app.post('/product', async (req, res) => {
 app.get('/recipes', async (req, res) => {
   try {
     const client = await pool.connect();
-    let query = 'SELECT * FROM recipes WHERE 1=1'; // Base SQL query
+    let query = 'SELECT * FROM recipes WHERE 1=1'; 
 
     const { kkal, meal_type, diet } = req.query;
 
@@ -143,6 +146,31 @@ app.delete('/admin/delete', async (req, res) => {
     res.status(500).send('Произошла ошибка при удалении рецепта.');
   }
 });
+
+app.post('/admin/addRecipe', async (req, res) => {
+  try {
+    const { recipeImage, recipeName, recipeIngridients, recipeSteps, recipeDiet, recipeMealType, recipeKkal, recipeProtein, recipeFats, recipeCarbs, recipeSource } = req.body;
+    console.log(req.body);
+    
+    const imagesDir = path.join(__dirname, 'images');
+    if (!fs.existsSync(imagesDir)) {
+      fs.mkdirSync(imagesDir);
+    }
+
+
+    const addRecipeAdmin = {
+      text: 'INSERT INTO recipes (name, description, image_url, kkal, protein, fats, carbohydrates, meal_type, diet, source, ingridients) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11 )',
+      values: [recipeName, recipeSteps, imagePath, recipeKkal, recipeProtein, recipeFats, recipeCarbs, recipeMealType, recipeDiet, recipeSource, recipeIngridients]
+    }
+    await pool.query(addRecipeAdmin);
+
+    res.status(200).send('Рецепт успешно добавлен.')
+  } catch (error) {
+    console.error('Ошибка:', error.message);
+    res.status(500).send('Произошла ошибка при добавлении рецепта.');
+  }
+});
+
 
 app.post('/diary/add', async (req, res) => {
   try {
