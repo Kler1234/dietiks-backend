@@ -7,6 +7,30 @@ const fs = require('fs');
 const path = require('path');
 const app = express();
 
+const multer = require('multer');
+
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'images');
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const fileFilter = (req, file, cb) => {
+  if (file.mimetype.startsWith('image/')) {
+    cb(null, true);
+  } else {
+    cb(new Error('Неподдерживаемый формат файла'));
+  }
+};
+
+const upload = multer({ storage: storage, fileFilter: fileFilter });
+
+
+
 const PORT = process.env.PORT || 3000;
 
 // Подключение к базе данных PostgreSQL
@@ -21,6 +45,7 @@ const pool = new Pool({
 // Middleware
 app.use(bodyParser.json());
 app.use(cors());
+app.use('/images', express.static(path.join(__dirname, 'images')));
 
 app.post('/register', async (req, res) => {
   const { email, password, name } = req.body;
@@ -128,6 +153,17 @@ app.delete('/admin/delete', async (req, res) => {
   try {
     const { recipeID } = req.body;
 
+    const getImageQuery = {
+      text: 'SELECT image_url FROM recipes WHERE recipe_id = $1',
+      values: [recipeID],
+    };
+    const imageResult = await pool.query(getImageQuery);
+    const imageUrl = imageResult.rows[0].image_url;
+
+    const imagePath = path.join(__dirname, imageUrl);
+
+    fs.unlinkSync(imagePath);
+
     const deleteFavorites = {
       text: 'DELETE FROM favorites WHERE recipe_id = $1',
       values: [recipeID],
@@ -147,20 +183,16 @@ app.delete('/admin/delete', async (req, res) => {
   }
 });
 
-app.post('/admin/addRecipe', async (req, res) => {
+app.post('/admin/addRecipe', upload.single('recipeImage'), async (req, res) => {
   try {
-    const { recipeImage, recipeName, recipeIngridients, recipeSteps, recipeDiet, recipeMealType, recipeKkal, recipeProtein, recipeFats, recipeCarbs, recipeSource } = req.body;
+    const { recipeName, recipeIngredients, recipeSteps, recipeDiet, recipeMealType, recipeKkal, recipeProtein, recipeFats, recipeCarbs, recipeSource } = req.body;
+    const imagePath = req.file.path;
+
     console.log(req.body);
-    
-    const imagesDir = path.join(__dirname, 'images');
-    if (!fs.existsSync(imagesDir)) {
-      fs.mkdirSync(imagesDir);
-    }
-
-
+    console.log(req.file.path);    
     const addRecipeAdmin = {
       text: 'INSERT INTO recipes (name, description, image_url, kkal, protein, fats, carbohydrates, meal_type, diet, source, ingridients) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11 )',
-      values: [recipeName, recipeSteps, imagePath, recipeKkal, recipeProtein, recipeFats, recipeCarbs, recipeMealType, recipeDiet, recipeSource, recipeIngridients]
+      values: [recipeName, recipeSteps, imagePath, recipeKkal, recipeProtein, recipeFats, recipeCarbs, recipeMealType, recipeDiet, recipeSource, recipeIngredients]
     }
     await pool.query(addRecipeAdmin);
 
