@@ -128,9 +128,9 @@ app.get('/recipes', async (req, res) => {
     const client = await pool.connect();
     let query = 'SELECT * FROM recipes WHERE 1=1'; 
 
-    const { kkal, meal_type, diet } = req.query;
+    const { kkal_min, kkal_max, meal_type, diet } = req.query;
 
-    if (kkal) query += ` AND kkal <= ${kkal}`;
+    if (kkal_min && kkal_max) query += ` AND kkal BETWEEN ${kkal_min} AND ${kkal_max}`;
     if (meal_type) query += ` AND meal_type = '${meal_type}'`;
     if (diet) {
       const dietsArray = Array.isArray(diet) ? diet : [diet];
@@ -148,6 +148,7 @@ app.get('/recipes', async (req, res) => {
     res.status(500).send('Failed to fetch recipes');
   }
 });
+
 
 app.delete('/admin/delete', async (req, res) => {
   try {
