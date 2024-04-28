@@ -1,3 +1,4 @@
+require('dotenv').config()
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
@@ -5,9 +6,9 @@ const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const path = require('path');
-const app = express();
-
 const multer = require('multer');
+
+const app = express();
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -47,6 +48,7 @@ app.use(bodyParser.json());
 app.use(cors());
 app.use('/images', express.static(path.join(__dirname, 'images')));
 
+
 app.post('/register', async (req, res) => {
   const { email, password, name } = req.body;
   console.log('Received register request:', { email, password, name });
@@ -56,8 +58,10 @@ app.post('/register', async (req, res) => {
       return res.status(400).send('Такой пользователь уже существует');
     }
     await pool.query('INSERT INTO users (email, password, username) VALUES ($1, $2, $3)', [email, password, name]);
+    
+    
     const user = { email, password };
-    const token = jwt.sign(user, 'NA-3aFhPebH?9U_RqwLskGzCB');
+    const token = jwt.sign(user, process.env.JWT_SECRET_ACCESS);
     res.status(201).json({ token });
   } catch (error) {
     console.error('Error registering user', error);
@@ -73,7 +77,7 @@ app.post('/login', async (req, res) => {
     if (result.rows.length > 0) {
       const user = result.rows[0];
       const token = jwt.sign(user, 'NA-3aFhPebH?9U_RqwLskGzCB');
-      res.status(200).json({ token, isAdmin: user.is_admin }); // Возвращаем также информацию о статусе администратора
+      res.status(200).json({ token, isAdmin: user.is_admin }); 
       console.log(user.is_admin);
     } else {
       res.status(401).send('Неверная почта или пароль');
@@ -407,7 +411,7 @@ app.post('/recipes/moderation', async (req, res) => {
 
 
 app.post('/calculate', async (req, res) => {
-  const { token, bzhuData } = req.body;
+  const { token, result } = req.body;
 
   try {
     const decoded = jwt.verify(token, 'NA-3aFhPebH?9U_RqwLskGzCB');
@@ -418,7 +422,7 @@ app.post('/calculate', async (req, res) => {
 
     // Добавляем результаты БЖУ в базу данных
     await pool.query('UPDATE users SET protein = $1, fat = $2, carbohydrate = $3, calorie_result = $4 WHERE email = $5',
-      [ bzhuData.proteins, bzhuData.fats, bzhuData.carbs, bzhuData.calories, decoded.email]);
+      [ result.protein, result.fats, result.carbs, result.calories, decoded.email]);
 
     res.status(201).send('Результаты БЖУ успешно сохранены');
   } catch (error) {
