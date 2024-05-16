@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
+const bcrypt = require('bcrypt');
 
 const app = express();
 
@@ -48,7 +49,6 @@ app.use(bodyParser.json());
 app.use(cors());
 app.use('/images', express.static(path.join(__dirname, 'images')));
 
-
 app.post('/register', async (req, res) => {
   const { email, password, name } = req.body;
   console.log('Received register request:', { email, password, name });
@@ -57,10 +57,12 @@ app.post('/register', async (req, res) => {
     if (existingUser.rows.length > 0) {
       return res.status(400).send('Такой пользователь уже существует');
     }
-    await pool.query('INSERT INTO users (email, password, username) VALUES ($1, $2, $3)', [email, password, name]);
+
+    const hashedPassword = await bcrypt.hash(password, 10);
     
+    await pool.query('INSERT INTO users (email, password, username) VALUES ($1, $2, $3)', [email, hashedPassword, name]);
     
-    const user = { email, password };
+    const user = { email, password: hashedPassword };
     const token = jwt.sign(user, process.env.JWT_SECRET_ACCESS);
     res.status(201).json({ token });
   } catch (error) {
@@ -69,16 +71,22 @@ app.post('/register', async (req, res) => {
   }
 });
 
+
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
   console.log('Received login request:', { email, password });
   try {
-    const result = await pool.query('SELECT * FROM users WHERE email = $1 AND password = $2', [email, password]);
+    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
     if (result.rows.length > 0) {
       const user = result.rows[0];
-      const token = jwt.sign(user, 'NA-3aFhPebH?9U_RqwLskGzCB');
-      res.status(200).json({ token, isAdmin: user.is_admin }); 
-      console.log(user.is_admin);
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+      if (isPasswordValid) {
+        const token = jwt.sign({ email, password: user.password }, process.env.JWT_SECRET_ACCESS);
+        res.status(200).json({ token, isAdmin: user.is_admin });
+        console.log(user.is_admin);
+      } else {
+        res.status(401).send('Неверная почта или пароль');
+      }
     } else {
       res.status(401).send('Неверная почта или пароль');
     }
@@ -87,6 +95,7 @@ app.post('/login', async (req, res) => {
     res.status(500).send('Не удалось выполнить вход');
   }
 });
+
 
 app.get('/autocomplete/:searchTerm', async (req, res) => {
   const searchTerm = req.params.searchTerm.toLowerCase();
@@ -396,19 +405,6 @@ app.get('/favorites/recipes', async (req, res) => {
     res.status(500).send('Внутренняя ошибка сервера');
   }
 });
-
-
-app.post('/recipes/moderation', async (req, res) => {
-  const { recipe_id, moderator_id } = req.body;
-  try {
-    await pool.query('INSERT INTO recipe_moderation (recipe_id, moderator_id, status) VALUES ($1, $2, $3)', [recipe_id, moderator_id, 'pending']);
-    res.status(201).send('Recipe added for moderation');
-  } catch (error) {
-    console.error('Error adding recipe for moderation', error);
-    res.status(500).send('Failed to add recipe for moderation');
-  }
-});
-
 
 app.post('/calculate', async (req, res) => {
   const { token, result } = req.body;
