@@ -31,20 +31,16 @@ const fileFilter = (req, file, cb) => {
 
 const upload = multer({ storage: storage, fileFilter: fileFilter });
 
+const PORT = process.env.SERVER_PORT;
 
-
-const PORT = process.env.PORT || 3000;
-
-// Подключение к базе данных PostgreSQL
 const pool = new Pool({
-  user: 'postgres',
-  host: 'localhost',
-  database: 'dietiks',
-  password: 'root',
-  port: 5432,
+  user: process.env.JWT_BD_USER,
+  host: process.env.JWT_BD_HOST,
+  database: process.env.JWT_BD_NAME,
+  password: process.env.JWT_BD_PASS,
+  port: process.env.JWT_BD_PORT,
 });
 
-// Middleware
 app.use(bodyParser.json());
 app.use(cors());
 app.use('/images', express.static(path.join(__dirname, 'images')));
